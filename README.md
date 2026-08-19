@@ -10,8 +10,48 @@
 Control de hilos con wait/notify. Productor/consumidor.
 
 1. Revise el funcionamiento del programa y ejecútelo. Mientras esto ocurren, ejecute jVisualVM y revise el consumo de CPU del proceso correspondiente. A qué se debe este consumo?, cual es la clase responsable?
+
+Encotramos que al ejecutar el programa original (Producer agregando un número cada segundo y Consumer sacando elementos) y revisarlo en jVisualVM, el consumo de CPU se mantenía alto todo el tiempo, alrededor de un 13%, incluso cuando la cola estaba vacía y no había nada que consumir.
+
+Esto se debia a que el problema estaba en la clase Consumer. Su método run() tenía un ciclo while(true) que preguntaba constantemente "¿hay algo en la cola?" (queue.size() > 0), sin detenerse nunca a esperar. Cuando la cola estaba vacía (que era casi todo el tiempo, porque el productor tardaba un segundo en agregar cada elemento), el hilo seguía preguntando lo mismo miles de veces por segundo sin descanso. Esto se conoce como "Espera activa", que es cuando el hilo mantiene al procesador ocupado haciendo un trabajo que en realidad no sirve de nada.
+
+La clase responsable fue Consumer, especificamente su metodo run ().
+Esto se confirmó en jVisualVM porque en la pestaña de Threads, el hilo del Consumer (Thread-1) aparecía todo el tiempo en estado "Running", mientras que el Producer (Thread-0) pasaba la mayor parte del tiempo dormido y casi no aportaba al consumo de CPU.
+
+
+
+<img width="1168" height="742" alt="image" src="https://github.com/user-attachments/assets/5a86e0d6-90e6-4e0e-8936-1c6906d3f084" />
+<img width="1166" height="744" alt="image" src="https://github.com/user-attachments/assets/d186993d-446e-4bf4-acc3-fb285254100f" />
+
+
+
 2. Haga los ajustes necesarios para que la solución use más eficientemente la CPU, teniendo en cuenta que -por ahora- la producción es lenta y el consumo es rápido. Verifique con JVisualVM que el consumo de CPU se reduzca.
+
+
+Modificamos la forma en que el Consumer espera por elementos. En vez de preguntar todo el tiempo si hay algo en la cola, ahora usa wait(): si la cola está vacía, el hilo se queda "dormido" sin gastar CPU, y solo se despierta cuando el Producer le avisa con notifyAll() que acaba de agregar algo. Para que esto funcione, ambas clases (Producer y Consumer) tuvieron que sincronizarse usando la propia cola como punto de control compartido (bloque synchronized), ya que en Java solo se puede usar wait() y notify() dentro de una sección sincronizada.
+
+En resumen: antes el consumidor preguntaba sin parar; ahora se queda quieto esperando una señal, y solo se activa cuando realmente hay trabajo por hacer.
+
+Se verifico en VisualVM, el consumo de CPU bajó de ~13% a un rango entre 0.0% y 0.5%, y en la pestaña de Threads ambos hilos aparecían la mayor parte del tiempo en estado "Wait" en lugar de "Running", confirmando que ya no había espera activa.
+
+<img width="1168" height="743" alt="image" src="https://github.com/user-attachments/assets/f50ed9e7-3ef0-4729-9b7f-ef3218f66482" />
+
+<img width="1171" height="740" alt="image" src="https://github.com/user-attachments/assets/5b0c7c93-868e-455c-a9a2-bc7667743689" />
+
+
 3. Haga que ahora el productor produzca muy rápido, y el consumidor consuma lento. Teniendo en cuenta que el productor conoce un límite de Stock (cuantos elementos debería tener, a lo sumo en la cola), haga que dicho límite se respete. Revise el API de la colección usada como cola para ver cómo garantizar que dicho límite no se supere. Verifique que, al poner un límite pequeño para el 'stock', no haya consumo alto de CPU ni errores.
+
+Aca lo que hicimos que se se invirtieron las velocidades: ahora el Producer genera elementos muy rápido (sin pausas) y el Consumer los procesa lento (con una espera de 1 segundo entre cada uno). Como el productor es mucho más rápido, si no se controla nada la cola crecería sin límite. Para evitarlo, se usó el valor de stockLimit que ya existía en la clase Producer pero que antes no se aplicaba: se agregó una condición para que, si la cola ya alcanzó ese límite (por ejemplo, 5 elementos), el Producer se detenga usando wait() hasta que el Consumer saque algo y le avise con notifyAll() que ya hay espacio libre otra vez.
+De esta forma, el productor nunca sobrepasa el límite de stock definido, y tampoco se queda "preguntando sin parar" si ya hay espacio: se bloquea de forma eficiente y se despierta solo cuando corresponde.
+
+Verificamos en VisualVM, incluso con un límite de stock pequeño (5 elementos), el consumo de CPU se mantuvo bajo, con pequeños aumentos puntuales (hasta 1.1%) que corresponden a los momentos en que el productor llena rápidamente el espacio disponible, y luego vuelve a quedar en espera
+
+![alt text](image.png)
+
+![alt text](image-1.png)
+
+
+
 
 
 ##### Parte II. – Antes de terminar la clase.
