@@ -31,15 +31,16 @@ public class Producer extends Thread {
             dataSeed = dataSeed + rand.nextInt(100);
 
             synchronized (queue) {
+                while (queue.size() >= stockLimit) {
+                    try {
+                        queue.wait();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
                 queue.add(dataSeed);
                 System.out.println("Producer added " + dataSeed);
                 queue.notifyAll();
-            }
-
-            try {
-                Thread.sleep(1000);
-            } catch (InterruptedException ex) {
-                Thread.currentThread().interrupt();
             }
         }
     }

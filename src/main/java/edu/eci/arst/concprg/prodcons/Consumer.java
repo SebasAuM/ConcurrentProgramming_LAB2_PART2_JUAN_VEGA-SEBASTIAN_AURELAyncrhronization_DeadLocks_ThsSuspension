@@ -22,6 +22,7 @@ public class Consumer extends Thread {
     @Override
     public void run() {
         while (true) {
+            int elem;
             synchronized (queue) {
                 while (queue.isEmpty()) {
                     try {
@@ -30,9 +31,15 @@ public class Consumer extends Thread {
                         Thread.currentThread().interrupt();
                     }
                 }
-                int elem = queue.poll();
+                elem = queue.poll();
                 System.out.println("Consumer consumes " + elem);
                 queue.notifyAll();
+            }
+
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
             }
         }
     }
