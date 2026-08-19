@@ -118,9 +118,32 @@ Sincronización y Dead-Locks.
 
 2. Revise el código e identifique cómo se implemento la funcionalidad antes indicada. Dada la intención del juego, un invariante debería ser que la sumatoria de los puntos de vida de todos los jugadores siempre sea el mismo(claro está, en un instante de tiempo en el que no esté en proceso una operación de incremento/reducción de tiempo). Para este caso, para N jugadores, cual debería ser este valor?.
 
+El programa implementa N hilos (uno por inmortal), donde cada hilo ejecuta indefinidamente un bucle que: (1) selecciona aleatoriamente a otro inmortal de una lista compartida, (2) lo ataca reduciendo su vida en un valor fijo y aumentando la propia en esa misma cantidad, y (3) espera 1 ms antes de repetir. No hay mecanismos de sincronización, por lo que múltiples hilos acceden concurrentemente a la lista de inmortales y a sus valores de vida.
+
+Dado que cada ataque transfiere puntos de vida de un inmortal a otro sin crear ni destruir vida, el invariante del sistema es que la suma total de puntos de vida de todos los inmortales debe permanecer constante. Para N jugadores que inician con 100 puntos de vida cada uno, este valor es N × 100. Por ejemplo, con 3 inmortales la suma siempre debería ser 300.
+
+
+
+
 3. Ejecute la aplicación y verifique cómo funcionan las opción ‘pause and check’. Se cumple el invariante?.
 
+Al ejecutar la aplicación y presionar repetidamente el botón "Pause and check", se observa que el invariante NO se cumple de manera consistente. Aunque teóricamente la suma debería ser siempre 300 (para 3 inmortales), en la práctica se ven valores como 340, 440, 500, etc.
+
+![alt text](image-2.png)
+
+Esto ocurre por dos razones:
+
+**El botón no pausa los hilos**: mientras el hilo principal lee la lista y suma los valores, los otros hilos siguen atacando y modificando concurrentemente los valores de vida.
+
+**Alta frecuencia de ataques**: el bucle while(true) con sleep(1) hace que los inmortales peleen aproximadamente cada 1-2 ms, por lo que es muy probable que ocurran modificaciones durante la lectura.
+
+El invariante solo se verificaría correctamente si los hilos se pausaran realmente antes de leer los valores.
+
+
+
 4. Una primera hipótesis para que se presente la condición de carrera para dicha función (pause and check), es que el programa consulta la lista cuyos valores va a imprimir, a la vez que otros hilos modifican sus valores. Para corregir esto, haga lo que sea necesario para que efectivamente, antes de imprimir los resultados actuales, se pausen todos los demás hilos. Adicionalmente, implemente la opción ‘resume’.
+
+![alt text](image-3.png)
 
 5. Verifique nuevamente el funcionamiento (haga clic muchas veces en el botón). Se cumple o no el invariante?.
 
