@@ -5,7 +5,7 @@
 
 #### Ejercicio – programación concurrente, condiciones de carrera y sincronización de hilos. EJERCICIO INDIVIDUAL O EN PAREJAS.
 
-##### Parte I – Antes de terminar la clase.
+##### **Parte I – Antes de terminar la clase.**
 
 Control de hilos con wait/notify. Productor/consumidor.
 
@@ -54,12 +54,54 @@ Verificamos en VisualVM, incluso con un límite de stock pequeño (5 elementos),
 
 
 
-##### Parte II. – Antes de terminar la clase.
+##### **Parte II. – Antes de terminar la clase.**
 
 Teniendo en cuenta los conceptos vistos de condición de carrera y sincronización, haga una nueva versión -más eficiente- del ejercicio anterior (el buscador de listas negras). En la versión actual, cada hilo se encarga de revisar el host en la totalidad del subconjunto de servidores que le corresponde, de manera que en conjunto se están explorando la totalidad de servidores. Teniendo esto en cuenta, haga que:
 
 - La búsqueda distribuida se detenga (deje de buscar en las listas negras restantes) y retorne la respuesta apenas, en su conjunto, los hilos hayan detectado el número de ocurrencias requerido que determina si un host es confiable o no (_BLACK_LIST_ALARM_COUNT_).
 - Lo anterior, garantizando que no se den condiciones de carrera.
+
+## Problema inicial
+
+La versión concurrente inicial dividía los 80.000 servidores de listas negras entre varios hilos. Sin embargo, cada hilo revisaba por completo el rango que tenía asignado, aun cuando entre todos ya se hubieran encontrado las 5 ocurrencias requeridas por **BLACK_LIST_ALARM_COUNT**.
+
+Esto era ineficiente porque, una vez se alcanzan 5 coincidencias, el host ya debe clasificarse como no confiable y no es necesario consultar las listas restantes.
+
+Además, un contador o una lista compartidos no podían ser modificados directamente por varios hilos al mismo tiempo, porque esto podía causar una condición de carrera: dos hilos podían intentar actualizar el estado simultáneamente y perder resultados o dejar un conteo incorrecto.
+
+## Solución implementada
+
+Se creó la clase **SharedBlackListsState**, compartida por todos los hilos de búsqueda. Esta clase almacena las coincidencias encontradas y el límite de alarma.
+
+Los métodos que agregan una coincidencia, verifican si se alcanzó el límite y entregan el resultado se declararon con **synchronized**. Así, solo un hilo puede modificar o consultar el estado compartido a la vez, evitando condiciones de carrera.
+
+Cada **BlackListSearchThread** revisa su segmento de servidores, pero antes de cada nueva consulta verifica si ya se alcanzó la cantidad máxima de ocurrencias. Cuando cualquier hilo encuentra la quinta coincidencia, los demás hilos detectan que la alarma ya fue alcanzada y terminan su búsqueda sin revisar las listas restantes.
+
+## Resultados de la prueba
+
+Se probó la IP **202.24.34.55**, la cual aparece en las listas negras con índices:
+
+**[29, 10034, 20200, 31000, 70500]**
+
+Como se encontraron las 5 coincidencias requeridas, el sistema reportó correctamente el host como **NOT trustworthy**.
+
+| Número de hilos | Tiempo de ejecución | Coincidencias encontradas |
+|---:|---:|---|
+| 1 | 108928 ms | 5 |
+| 8 | 1449 ms | 5 |
+| 16 | 1546 ms | 5 |
+| 50 | 1609 ms | 5 |
+| 100 | 979 ms | 5 |
+
+Los resultados muestran una mejora importante frente a la ejecución con un solo hilo. Con 1 hilo, la búsqueda tardó aproximadamente 109 segundos; con 8 hilos, tardó aproximadamente 1.4 segundos.
+
+El mejor resultado de esta prueba fue con 100 hilos, con 979 ms. Sin embargo, más hilos no siempre garantizan una reducción proporcional del tiempo: crear y coordinar demasiados hilos también tiene un costo, y el sistema operativo debe repartir el procesador entre ellos.
+
+## Conclusión
+
+La solución detecta correctamente cuándo un host aparece en al menos cinco listas negras y lo reporta como no confiable. Además, utiliza sincronización para proteger el contador y la lista de resultados compartidos, y permite que la búsqueda se detenga anticipadamente cuando ya se obtuvo la respuesta necesaria.
+
+
 
 ##### Parte III. – Avance para el martes, antes de clase.
 
