@@ -109,14 +109,14 @@ Sincronización y Dead-Locks.
 
 ![](http://files.explosm.net/comics/Matt/Bummed-forever.png)
 
-1. Revise el programa “highlander-simulator”, dispuesto en el paquete edu.eci.arsw.highlandersim. Este es un juego en el que:
+1. **Revise el programa “highlander-simulator”, dispuesto en el paquete edu.eci.arsw.highlandersim. Este es un juego en el que:**
 
 	* Se tienen N jugadores inmortales.
 	* Cada jugador conoce a los N-1 jugador restantes.
 	* Cada jugador, permanentemente, ataca a algún otro inmortal. El que primero ataca le resta M puntos de vida a su contrincante, y aumenta en esta misma cantidad sus propios puntos de vida.
 	* El juego podría nunca tener un único ganador. Lo más probable es que al final sólo queden dos, peleando indefinidamente quitando y sumando puntos de vida.
 
-2. Revise el código e identifique cómo se implemento la funcionalidad antes indicada. Dada la intención del juego, un invariante debería ser que la sumatoria de los puntos de vida de todos los jugadores siempre sea el mismo(claro está, en un instante de tiempo en el que no esté en proceso una operación de incremento/reducción de tiempo). Para este caso, para N jugadores, cual debería ser este valor?.
+2. **Revise el código e identifique cómo se implemento la funcionalidad antes indicada. Dada la intención del juego, un invariante debería ser que la sumatoria de los puntos de vida de todos los jugadores siempre sea el mismo(claro está, en un instante de tiempo en el que no esté en proceso una operación de incremento/reducción de tiempo). Para este caso, para N jugadores, cual debería ser este valor?.**
 
 El programa implementa N hilos (uno por inmortal), donde cada hilo ejecuta indefinidamente un bucle que: (1) selecciona aleatoriamente a otro inmortal de una lista compartida, (2) lo ataca reduciendo su vida en un valor fijo y aumentando la propia en esa misma cantidad, y (3) espera 1 ms antes de repetir. No hay mecanismos de sincronización, por lo que múltiples hilos acceden concurrentemente a la lista de inmortales y a sus valores de vida.
 
@@ -125,7 +125,7 @@ Dado que cada ataque transfiere puntos de vida de un inmortal a otro sin crear n
 
 
 
-3. Ejecute la aplicación y verifique cómo funcionan las opción ‘pause and check’. Se cumple el invariante?.
+**3.Ejecute la aplicación y verifique cómo funcionan las opción ‘pause and check’. Se cumple el invariante?.**
 
 Al ejecutar la aplicación y presionar repetidamente el botón "Pause and check", se observa que el invariante NO se cumple de manera consistente. Aunque teóricamente la suma debería ser siempre 300 (para 3 inmortales), en la práctica se ven valores como 340, 440, 500, etc.
 
@@ -141,13 +141,21 @@ El invariante solo se verificaría correctamente si los hilos se pausaran realme
 
 
 
-4. Una primera hipótesis para que se presente la condición de carrera para dicha función (pause and check), es que el programa consulta la lista cuyos valores va a imprimir, a la vez que otros hilos modifican sus valores. Para corregir esto, haga lo que sea necesario para que efectivamente, antes de imprimir los resultados actuales, se pausen todos los demás hilos. Adicionalmente, implemente la opción ‘resume’.
+**4. Una primera hipótesis para que se presente la condición de carrera para dicha función (pause and check), es que el programa consulta la lista cuyos valores va a imprimir, a la vez que otros hilos modifican sus valores. Para corregir esto, haga lo que sea necesario para que efectivamente, antes de imprimir los resultados actuales, se pausen todos los demás hilos. Adicionalmente, implemente la opción ‘resume’.**
+
+Para corregir la condición de carrera del botón "Pause and check", se agregó a la clase Immortal un indicador booleano paused, protegido por un objeto de bloqueo dedicado pauseLock. Dentro del método run(), al inicio de cada iteración del bucle, cada hilo verifica este indicador dentro de un bloque synchronized(pauseLock); si está en true, el hilo se bloquea invocando pauseLock.wait(), liberando el lock mientras espera. El botón "Pause and check" invoca el método pause() sobre todos los inmortales (que fija paused = true) antes de recorrer la lista y sumar los valores de vida. El botón "Resume" invoca resumeImmortal(), que fija paused = false y llama a pauseLock.notifyAll() para despertar a todos los hilos en espera. De esta forma, ningún hilo puede modificar los valores de vida mientras se están leyendo para el cálculo de la suma.
 
 ![alt text](image-3.png)
 
-5. Verifique nuevamente el funcionamiento (haga clic muchas veces en el botón). Se cumple o no el invariante?.
+**5. Verifique nuevamente el funcionamiento (haga clic muchas veces en el botón). Se cumple o no el invariante?.**
 
-6. Identifique posibles regiones críticas en lo que respecta a la pelea de los inmortales. Implemente una estrategia de bloqueo que evite las condiciones de carrera. Recuerde que si usted requiere usar dos o más ‘locks’ simultáneamente, puede usar bloques sincronizados anidados:
+El invariante menciona que debe ser constante, si N=3, entonces deberiamos ver en todas las pausas 300:
+
+![alt text](image-4.png)
+
+Como podemos observar, efectivamente si se cumple el invariante. 
+
+**6. Identifique posibles regiones críticas en lo que respecta a la pelea de los inmortales. Implemente una estrategia de bloqueo que evite las condiciones de carrera. Recuerde que si usted requiere usar dos o más ‘locks’ simultáneamente, puede usar bloques sincronizados anidados:**
 
 	```java
 	synchronized(locka){
@@ -156,18 +164,56 @@ El invariante solo se verificaría correctamente si los hilos se pausaran realme
 		}
 	}
 	```
+La región crítica identificada es el método fight(): en él se lee la vida de la víctima, se le resta el daño y esa misma cantidad se suma a la vida del atacante. Si dos hilos ejecutan fight() involucrando a un mismo inmortal al mismo tiempo (por ejemplo, dos inmortales atacándose mutuamente, o dos atacando a un tercero simultáneamente), las lecturas y escrituras sobre health pueden entrelazarse y romper el invariante de la suma total.
 
-7. Tras implementar su estrategia, ponga a correr su programa, y ponga atención a si éste se llega a detener. Si es así, use los programas jps y jstack para identificar por qué el programa se detuvo.
+Para proteger esta región se usa el pauseLock de cada inmortal como lock de sincronización de la pelea, tomando los locks de ambos participantes de forma anidada (synchronized(first.pauseLock){ synchronized(second.pauseLock){ ... } }). El punto clave de la estrategia es el orden en que se adquieren esos locks: en vez de bloquear siempre primero al atacante y luego a la víctima (lo que puede generar un deadlock si dos hilos se atacan entre sí al mismo tiempo, cada uno esperando el lock que tiene el otro), se determina el orden según la posición de cada inmortal en la lista compartida immortalsPopulation (indexOf), bloqueando siempre primero al de menor índice. De esta manera, cualquier par de hilos que intenten pelear entre sí adquieren los locks en el mismo orden global, eliminando la posibilidad de espera circular (deadlock)
 
-8. Plantee una estrategia para corregir el problema antes identificado (puede revisar de nuevo las páginas 206 y 207 de _Java Concurrency in Practice_).
 
-9. Una vez corregido el problema, rectifique que el programa siga funcionando de manera consistente cuando se ejecutan 100, 1000 o 10000 inmortales. Si en estos casos grandes se empieza a incumplir de nuevo el invariante, debe analizar lo realizado en el paso 4.
+**7. Tras implementar su estrategia, ponga a correr su programa, y ponga atención a si éste se llega a detener. Si es así, use los programas jps y jstack para identificar por qué el programa se detuvo.**
 
-10. Un elemento molesto para la simulación es que en cierto punto de la misma hay pocos 'inmortales' vivos realizando peleas fallidas con 'inmortales' ya muertos. Es necesario ir suprimiendo los inmortales muertos de la simulación a medida que van muriendo. Para esto:
+Tras implementar la estrategia de bloqueo con locks anidados y ordenados por índice, se dejó el programa corriendo durante aproximadamente 2 minutos con varios inmortales atacándose continuamente. En ningún momento el programa se detuvo ni dejó de responder: los mensajes de "Fight: ..." se siguieron imprimiendo de forma constante en el área de texto, y los botones de la interfaz (incluyendo "Pause and check") siguieron funcionando con normalidad durante toda la prueba.
+
+Esto confirma que la estrategia de ordenar la adquisición de los locks por la posición de cada inmortal en la lista compartida (en vez de tomarlos en el orden "atacante, luego víctima") efectivamente evita el deadlock: dado que todos los hilos adquieren los locks siempre en el mismo orden global, no es posible que se forme una espera circular entre dos hilos que se atacan mutuamente, que es la condición necesaria para que ocurra un deadlock. Como no se presentó un bloqueo, no fue necesario usar jps/jstack para diagnóstico en este caso.
+
+
+
+**8. Plantee una estrategia para corregir el problema antes identificado (puede revisar de nuevo las páginas 206 y 207 de _Java Concurrency in Practice_).**
+
+La estrategia aplicada corresponde a la solución de lock ordering descrita en las páginas 130 de Java Concurrency in Practice: cuando una operación necesita tomar dos locks a la vez (como ocurre en fight(), que involucra al atacante y a la víctima), el riesgo de deadlock aparece si distintos hilos pueden adquirir esos dos locks en órdenes opuestos. La solución consiste en inducir un orden total y consistente sobre los locks, de modo que todos los hilos los adquieran siempre en la misma secuencia, independientemente de cuál sea el "origen" y cuál el "destino" de la operación.
+
+JCIP resuelve esto usando System.identityHashCode() como criterio de orden cuando los objetos no tienen uno natural. En este caso se usó como criterio la posición de cada inmortal en la lista compartida immortalsPopulation (obtenida con indexOf): en fight(), antes de tomar los locks se compara el índice de this y de i2, y siempre se bloquea primero el pauseLock del inmortal con menor índice. De esta forma, dos hilos que se atacan mutuamente —el caso que generaría espera circular— siempre intentan adquirir los locks en el mismo orden, por lo que nunca terminan bloqueados esperando el uno al otro. Esto es consistente con lo observado en el punto 7: el programa corrió sin detenerse en ningún momento.
+
+
+**9. Una vez corregido el problema, rectifique que el programa siga funcionando de manera consistente cuando se ejecutan 100, 1000 o 10000 inmortales. Si en estos casos grandes se empieza a incumplir de nuevo el invariante, debe analizar lo realizado en el paso 4.**
+
+Se ejecutó la simulación con 100, 1000 y 10000 inmortales, verificando en cada caso el invariante mediante el botón "Pause and check" repetidas veces. En los tres casos el invariante se mantuvo correctamente: la suma total de puntos de vida fue siempre N×100 (por ejemplo, 1.000.000 para 10000 inmortales), sin importar cuántas veces se consultara.
+
+Sí se notó un impacto claro en el rendimiento a medida que aumenta N: con 10000 inmortales la simulación se volvió notablemente más lenta y demandante para la máquina. Esto es consistente con el diseño actual de fight(), que llama dos veces a immortalsPopulation.indexOf(...) en cada pelea (una para saber la posición propia y otra, dentro de la comparación de orden, para la del oponente) sobre una LinkedList, cuya operación indexOf es O(n). Con miles de inmortales ejecutándose concurrentemente, cada uno haciendo esta búsqueda lineal en cada iteración de su bucle, el costo total crece rápidamente. Aun así, la corrección del invariante no se ve afectada — el impacto es únicamente de rendimiento, no de consistencia.
+
+
+
+* Esto fue lo que obtuvimos para 100
+
+![alt text](image-5.png)
+
+
+* Para 1000, esto llevaba a mi cpu a casi un 50%, lo verificamos con el programa de VisualVM
+
+![alt text](image-6.png)
+
+![alt text](image-7.png)
+
+Para 10000, este fue el que mas le costo, supero 50% en el uso de cpu.
+
+
+
+
+**10. Un elemento molesto para la simulación es que en cierto punto de la misma hay pocos 'inmortales' vivos realizando peleas fallidas con 'inmortales' ya muertos. Es necesario ir suprimiendo los inmortales muertos de la simulación a medida que van muriendo. Para esto:
 	* Analizando el esquema de funcionamiento de la simulación, esto podría crear una condición de carrera? Implemente la funcionalidad, ejecute la simulación y observe qué problema se presenta cuando hay muchos 'inmortales' en la misma. Escriba sus conclusiones al respecto en el archivo RESPUESTAS.txt.
-	* Corrija el problema anterior __SIN hacer uso de sincronización__, pues volver secuencial el acceso a la lista compartida de inmortales haría extremadamente lenta la simulación.
+	* Corrija el problema anterior __SIN hacer uso de sincronización__, pues volver secuencial el acceso a la lista compartida de inmortales haría extremadamente lenta la simulación.**
 
-11. Para finalizar, implemente la opción STOP.
+
+**11. Para finalizar, implemente la opción STOP.**
 
 <!--
 ### Criterios de evaluación
