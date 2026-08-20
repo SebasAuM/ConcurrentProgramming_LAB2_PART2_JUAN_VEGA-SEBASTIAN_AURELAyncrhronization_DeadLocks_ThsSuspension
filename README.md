@@ -5,6 +5,8 @@
 
 #### Ejercicio – programación concurrente, condiciones de carrera y sincronización de hilos. EJERCICIO INDIVIDUAL O EN PAREJAS.
 
+##Juan Pablo Vega - Sebastian Aurela Medina
+
 ##### **Parte I – Antes de terminar la clase.**
 
 Control de hilos con wait/notify. Productor/consumidor.
@@ -212,8 +214,35 @@ Para 10000, este fue el que mas le costo, supero 50% en el uso de cpu.
 	* Analizando el esquema de funcionamiento de la simulación, esto podría crear una condición de carrera? Implemente la funcionalidad, ejecute la simulación y observe qué problema se presenta cuando hay muchos 'inmortales' en la misma. Escriba sus conclusiones al respecto en el archivo RESPUESTAS.txt.
 	* Corrija el problema anterior __SIN hacer uso de sincronización__, pues volver secuencial el acceso a la lista compartida de inmortales haría extremadamente lenta la simulación.**
 
+Este era la imagen de como teniamos el metodo Fight antes de el cambio, vamos a realiazr un codigo implementando la funcionalidad que se menciona en esta pregunta para observar que problema se presenta.
+![alt text](image-8.png) 
+ 
+Imange de como quedo el codigo ahora.
+![alt text](image-9.png) 
+
+Al ejecutar esto, obtuvimos esto:
+![alt text](image-10.png)
+
+El programa se detuvo solo depues de un momento, ya que como cuando un Inmortal tenia cero vida era eliminado definitivamente.
+Entonces Sí, eliminar inmortales de la lista compartida mientras la simulación corre introduce una condición de carrera. La lista immortalsPopulation (un LinkedList) no tiene ningún mecanismo de sincronización que proteja su estructura: mientras un hilo ejecuta remove(i2) al detectar que un inmortal murió, decenas de otros hilos están simultáneamente llamando size(), get(indice) e indexOf(...) sobre esa misma lista, tanto para elegir oponente en run() como para el ordenamiento de locks en fight().
+
+Al implementar esta funcionalidad y ejecutar la simulación con un número considerable de inmortales, se observó que, tras dejarla correr un momento, la simulación se detuvo por completo con la lista de inmortales completamente vacía (suma de vida en 0, sin ningún inmortal restante). Esto no corresponde al comportamiento esperado del juego: dado que la vida total se conserva en cada pelea, en el peor de los casos debería quedar siempre al menos un inmortal con la totalidad de los puntos de vida acumulados. Que la lista termine vacía indica que la modificación concurrente y no sincronizada de la estructura del LinkedList (remociones ocurriendo al mismo tiempo que otros hilos la recorren) corrompe su estado interno, provocando que se pierdan o eliminen inmortales de forma incorrecta.
+
+**Análisis y observación del problema**: Eliminar inmortales de la lista compartida mientras la simulación corre introduce condiciones de carrera, ya que immortalsPopulation no tenía ningún mecanismo de protección mientras múltiples hilos la recorrían (get, indexOf, size) y la modificaban (remove) de forma simultánea. Al implementar una primera versión de la eliminación sobre un LinkedList sin sincronización, la simulación terminaba con la lista completamente vacía (suma de vida en 0) tras dejarla correr un momento — un resultado imposible según la lógica del juego, ya que la vida nunca se crea ni se destruye, solo se transfiere; en el peor caso debería sobrevivir siempre al menos un inmortal con toda la vida acumulada.
+
+Corrección sin sincronización adicional: Se identificaron y corrigieron tres causas relacionadas, ninguna resuelta con locks nuevos:
+
+Se reemplazó la lista compartida de LinkedList a CopyOnWriteArrayList, una colección de java.util.concurrent pensada para escenarios de muchas lecturas concurrentes y pocas escrituras (como este caso), que evita la corrupción estructural de la lista sin que el código cliente tenga que sincronizar el acceso.
+Se agregó una verificación en run(): cada hilo revisa su propia salud al inicio de cada iteración y termina su ejecución (break) si ya es <= 0, evitando que inmortales ya eliminados de la lista sigan generando ataques como hilos "zombie".
+Se detectó una condición de carrera adicional: entre el momento en que un hilo comprobaba su propia salud y el momento en que efectivamente atacaba, otro hilo podía matarlo y eliminarlo de la lista — pero al ejecutar igual su ataque, la línea this.health += defaultDamageValue lo "revivía" con salud positiva sin que ya estuviera en la lista, generando hilos zombie invisibles que seguían atacando indefinidamente. Se corrigió repitiendo la verificación de la propia salud, esta vez dentro del bloque sincronizado sobre los pauseLock (el único punto donde el valor leído es confiable), evitando el ataque si el inmortal ya fue eliminado por otro hilo.
+
+Tras estos tres cambios, la simulación se estabiliza correctamente: converge siempre a un único sobreviviente con la totalidad de la vida acumulada (por ejemplo, 300 para 3 inmortales iniciales), cumpliendo el invariante sin necesidad de sincronizar el acceso a la lista compartida.
+
 
 **11. Para finalizar, implemente la opción STOP.**
+
+Se agregó a Immortal un indicador volatile boolean running, revisado tanto en la condición del bucle principal (while(running)) como dentro de la espera por pausa (while(paused && running)), y un método stopImmortal() que lo pone en false y ejecuta pauseLock.notifyAll() para despertar al hilo en caso de que estuviera pausado esperando en wait(). El botón "STOP" invoca stopImmortal() sobre todos los inmortales, terminando su ejecución de forma ordenada sin importar en qué estado se encontraran (peleando, dormidos o pausados).
+
 
 <!--
 ### Criterios de evaluación
