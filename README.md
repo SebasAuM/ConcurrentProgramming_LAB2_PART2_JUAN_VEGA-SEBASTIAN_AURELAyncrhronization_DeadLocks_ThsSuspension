@@ -103,6 +103,7 @@ El mejor resultado de esta prueba fue con 100 hilos, con 979 ms. Sin embargo, m�
 
 La solución detecta correctamente cuándo un host aparece en al menos cinco listas negras y lo reporta como no confiable. Además, utiliza sincronización para proteger el contador y la lista de resultados compartidos, y permite que la búsqueda se detenga anticipadamente cuando ya se obtuvo la respuesta necesaria.
 
+* Se agrega link del repo donde se evidencian los cambios en el codigo: https://github.com/SebasAuM/LAB2_repository_FOR_POINT2.git
 
 
 ##### Parte III. – Avance para el martes, antes de clase.
